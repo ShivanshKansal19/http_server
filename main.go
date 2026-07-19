@@ -17,6 +17,7 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 	platform       string
 	secretKey      string
+	polkaKey       string
 }
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 		dbQueries:      dbQueries,
 		platform:       os.Getenv("PLATFORM"),
 		secretKey:      os.Getenv("SECRET_KEY"),
+		polkaKey:       os.Getenv("POLKA_KEY"),
 	}
 	mux := http.NewServeMux()
 	handler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))

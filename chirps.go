@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,7 +93,20 @@ func (apiCfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request)
 }
 
 func (apiCfg *apiConfig) handlerListChirps(w http.ResponseWriter, r *http.Request) {
-	chirps, err := apiCfg.dbQueries.ListChirps(r.Context())
+	authorID := r.URL.Query().Get("author_id")
+	sortBy := r.URL.Query().Get("sort")
+	var chirps []database.Chirp
+	var err error
+	if authorID != "" {
+		userId, err := uuid.Parse(authorID)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid author_id", err)
+			return
+		}
+		chirps, err = apiCfg.dbQueries.ListChirpsByUserID(r.Context(), userId)
+	} else {
+		chirps, err = apiCfg.dbQueries.ListChirps(r.Context())
+	}
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't list chirps", err)
 		return
@@ -105,6 +119,15 @@ func (apiCfg *apiConfig) handlerListChirps(w http.ResponseWriter, r *http.Reques
 			UpdatedAt: chirp.UpdatedAt,
 			Body:      chirp.Body,
 			UserID:    chirp.UserID,
+		})
+	}
+	if sortBy == "desc" {
+		sort.Slice(responseChirps, func(i, j int) bool {
+			return responseChirps[i].CreatedAt.After(responseChirps[j].CreatedAt)
+		})
+	} else {
+		sort.Slice(responseChirps, func(i, j int) bool {
+			return responseChirps[i].CreatedAt.Before(responseChirps[j].CreatedAt)
 		})
 	}
 	respondWithJSON(w, http.StatusOK, responseChirps)
