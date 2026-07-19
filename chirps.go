@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ShivanshKansal19/http_server/internal/auth"
 	"github.com/ShivanshKansal19/http_server/internal/database"
 	"github.com/google/uuid"
 )
@@ -20,14 +21,23 @@ type Chirp struct {
 
 func (apiCfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 	type response struct {
 		Chirp
 	}
+	token, err := auth.GetBearerToken(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Missing or invalid token", err)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, apiCfg.secretKey)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid token", err)
+		return
+	}
 	var params parameters
-	err := json.NewDecoder(r.Body).Decode(&params)
+	err = json.NewDecoder(r.Body).Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
@@ -48,7 +58,7 @@ func (apiCfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Reque
 	}
 	chirp, err := apiCfg.dbQueries.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   strings.Join(cleanedBody, " "),
-		UserID: params.UserID,
+		UserID: userID,
 	})
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create chirp", err)
@@ -98,4 +108,42 @@ func (apiCfg *apiConfig) handlerListChirps(w http.ResponseWriter, r *http.Reques
 		})
 	}
 	respondWithJSON(w, http.StatusOK, responseChirps)
+}
+
+func (apiCfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Missing or invalid token", err)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, apiCfg.secretKey)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid token", err)
+		return
+	}
+
+	chirpIDStr := r.PathValue("chirpID")
+	chirpID, err := uuid.Parse(chirpIDStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID", err)
+		return
+	}
+
+	chirp, err := apiCfg.dbQueries.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Chirp not found", err)
+		return
+	}
+
+	if chirp.UserID != userID {
+		respondWithError(w, http.StatusForbidden, "You are not authorized to delete this chirp", nil)
+		return
+	}
+
+	err = apiCfg.dbQueries.DeleteChirpByID(r.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Chirp not found", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
